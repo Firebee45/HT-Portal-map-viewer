@@ -78,7 +78,6 @@
       });
     });
 
-    // Area labels as text above areas
     const areaLabelData = areas
       .filter(a => a.enabled !== false)
       .map(a => {
@@ -98,7 +97,6 @@
       });
     data.push(...areaLabelData);
 
-    // Determine axis ranges
     const xs = [
       ...ps.map(p => p.x),
       ...areas.map(a => a.x1),
@@ -156,7 +154,26 @@
     );
   }
 
-  // Handle file input change
+  function saveDataLocally(data) {
+    try {
+      localStorage.setItem('minecraftMapDataViewer', JSON.stringify(data));
+    } catch (e) {
+      console.warn('Could not save to localStorage:', e);
+    }
+  }
+
+  function loadDataLocally() {
+    try {
+      const saved = localStorage.getItem('minecraftMapDataViewer');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('Could not load from localStorage:', e);
+    }
+    return null;
+  }
+
   fileInput.addEventListener('change', (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -168,6 +185,7 @@
         if (!data.portals) data.portals = [];
         if (!data.areas) data.areas = [];
         updatePlot(data.portals, data.areas);
+        saveDataLocally(data);
       } catch (err) {
         alert('Invalid JSON file.');
       }
@@ -175,8 +193,15 @@
     reader.readAsText(file);
   });
 
-  // Initial empty plot
-  updatePlot([], []);
+  // On page load, try to load saved data from localStorage
+  window.addEventListener('load', () => {
+    const savedData = loadDataLocally();
+    if (savedData && (savedData.portals || savedData.areas)) {
+      updatePlot(savedData.portals || [], savedData.areas || []);
+    } else {
+      updatePlot([], []);
+    }
+  });
 </script>
 
 </body>
