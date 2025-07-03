@@ -44,34 +44,140 @@
   function calcDtick(range) {
     const base = 16;
     const exp = Math.floor(Math.log2(range / base));
-    return base * Math.pow(2, Math.max(exp,0));
+    return base * Math.pow(2, Math.max(exp, 0));
   }
 
-  function horizontalOverlap(r1, r2) {
-    return !(r2.left > r1.right || r2.right < r1.left);
-  }
-
-  function updatePlot(portals, areas) {
+  function updatePlot(portals = [], areas = []) {
     const data = [];
-    const ps = portals.filter(p => p.enabled !== false); // treat undefined as enabled
+    const ps = portals.filter(p => p.enabled !== false);
     if (ps.length) {
       data.push({
-        x: ps.map(p => p.x), y: ps.map(p => p.z),
+        x: ps.map(p => p.x),
+        y: ps.map(p => p.z),
         text: ps.map(p => `${p.label} (${p.x},${p.z})`),
-        mode: 'markers+text', textposition: 'top center',
-        marker: { size: 10, color: 'magenta' }, type: 'scatter', name: 'Portals'
+        mode: 'markers+text',
+        textposition: 'top center',
+        marker: { size: 10, color: 'magenta' },
+        type: 'scatter',
+        name: 'Portals'
       });
     }
 
     areas.filter(a => a.enabled !== false).forEach(a => {
-      const xMin = Math.min(a.x1, a.x2), xMax = Math.max(a.x1, a.x2);
-      const zMin = Math.min(a.z1, a.z2), zMax = Math.max(a.z1, a.z2);
+      const xMin = Math.min(a.x1, a.x2),
+        xMax = Math.max(a.x1, a.x2);
+      const zMin = Math.min(a.z1, a.z2),
+        zMax = Math.max(a.z1, a.z2);
       data.push({
         x: [xMin, xMax, xMax, xMin, xMin],
         y: [zMin, zMin, zMax, zMax, zMin],
-        mode: 'lines', line: { color: 'red', width: 2 },
-        showlegend: false, type: 'scatter'
+        mode: 'lines',
+        line: { color: 'red', width: 2 },
+        showlegend: false,
+        type: 'scatter'
       });
     });
 
-    const areaLabelData = areas.filter
+    // Area labels as text above areas
+    const areaLabelData = areas
+      .filter(a => a.enabled !== false)
+      .map(a => {
+        const xMin = Math.min(a.x1, a.x2),
+          xMax = Math.max(a.x1, a.x2);
+        const zMax = Math.max(a.z1, a.z2);
+        return {
+          x: [(xMin + xMax) / 2],
+          y: [zMax + 8],
+          text: [a.label],
+          mode: 'text',
+          textposition: 'top center',
+          textfont: { color: 'red', size: 14 },
+          showlegend: false,
+          type: 'scatter',
+        };
+      });
+    data.push(...areaLabelData);
+
+    // Determine axis ranges
+    const xs = [
+      ...ps.map(p => p.x),
+      ...areas.map(a => a.x1),
+      ...areas.map(a => a.x2),
+    ];
+    const zs = [
+      ...ps.map(p => p.z),
+      ...areas.map(a => a.z1),
+      ...areas.map(a => a.z2),
+    ];
+    const minX = Math.min(...xs, 0) - 32;
+    const maxX = Math.max(...xs, 0) + 32;
+    const minZ = Math.min(...zs, 0) - 32;
+    const maxZ = Math.max(...zs, 0) + 32;
+    const xrange = maxX - minX;
+    const zrange = maxZ - minZ;
+    const dt = calcDtick(Math.max(xrange, zrange));
+
+    Plotly.newPlot(
+      plotDiv,
+      data,
+      {
+        paper_bgcolor: '#111',
+        plot_bgcolor: '#111',
+        font: { color: '#ddd' },
+        xaxis: {
+          title: 'X',
+          showgrid: true,
+          gridcolor: '#333',
+          dtick: dt,
+          range: [minX, maxX],
+        },
+        yaxis: {
+          title: 'Z',
+          showgrid: true,
+          gridcolor: '#333',
+          dtick: dt,
+          scaleanchor: 'x',
+          scaleratio: 1,
+          range: [minZ, maxZ],
+        },
+        dragmode: false,
+        modebar: {
+          remove: [
+            'zoom2d',
+            'lasso2d',
+            'select2d',
+            'zoomIn2d',
+            'zoomOut2d',
+          ],
+          orientation: 'v',
+        },
+      },
+      { responsive: true }
+    );
+  }
+
+  // Handle file input change
+  fileInput.addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data.portals) data.portals = [];
+        if (!data.areas) data.areas = [];
+        updatePlot(data.portals, data.areas);
+      } catch (err) {
+        alert('Invalid JSON file.');
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  // Initial empty plot
+  updatePlot([], []);
+</script>
+
+</body>
+</html>
