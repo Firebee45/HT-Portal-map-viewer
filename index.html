@@ -11,21 +11,22 @@
       color: #ddd;
       max-width: 950px;
       margin: 20px auto;
-      text-align: center;
+      user-select: none;
     }
     #plot {
       width: 100%;
       height: 600px;
-      margin-top: 20px;
+      margin-bottom: 10px;
     }
-    input[type="file"] {
-      margin-top: 20px;
-      background: #222;
+    #fileUpload {
+      display: block;
+      margin: 10px 0;
       color: #ddd;
-      padding: 6px 12px;
-      border-radius: 4px;
-      border: 1px solid #444;
+    }
+    label {
       cursor: pointer;
+      text-decoration: underline;
+      color: #55f;
     }
   </style>
 </head>
@@ -33,174 +34,172 @@
 
 <h2>Minecraft Portal & Area Map Viewer</h2>
 
-<input type="file" id="jsonFileInput" accept=".json" />
-
 <div id="plot"></div>
 
-<script>
-  const plotDiv = document.getElementById('plot');
-  const fileInput = document.getElementById('jsonFileInput');
+<label for="fileUpload">Upload JSON data file (optional):</label>
+<input type="file" id="fileUpload" accept="application/json" />
 
+<script>
+  // Change this URL to your actual public raw GitHub JSON file URL
+  const DATA_URL = 'https://raw.githubusercontent.com/yourusername/yourrepo/main/minecraftMapData.json';
+
+  let portals = [], areas = [];
+
+  // Save data locally (viewer page localStorage)
+  function saveDataLocally(data) {
+    try {
+      localStorage.setItem('minecraftMapData', JSON.stringify(data));
+    } catch {}
+  }
+
+  // Load data locally
+  function loadDataLocally() {
+    try {
+      const saved = localStorage.getItem('minecraftMapData');
+      if (!saved) return null;
+      return JSON.parse(saved);
+    } catch {
+      return null;
+    }
+  }
+
+  // Calculate dtick for grid
   function calcDtick(range) {
     const base = 16;
     const exp = Math.floor(Math.log2(range / base));
-    return base * Math.pow(2, Math.max(exp, 0));
+    return base * Math.pow(2, Math.max(exp,0));
   }
 
-  function updatePlot(portals = [], areas = []) {
+  // Check horizontal overlap for label stacking
+  function horizontalOverlap(r1, r2) {
+    return !(r2.left > r1.right || r2.right < r1.left);
+  }
+
+  // Update Plotly plot with given portals and areas
+  function updatePlot(portalsData, areasData) {
+    portals = portalsData || [];
+    areas = areasData || [];
+
     const data = [];
-    const ps = portals.filter(p => p.enabled !== false);
+
+    const ps = portals.filter(p => p.enabled !== false); // treat undefined as enabled
     if (ps.length) {
       data.push({
-        x: ps.map(p => p.x),
-        y: ps.map(p => p.z),
+        x: ps.map(p => p.x), y: ps.map(p => p.z),
         text: ps.map(p => `${p.label} (${p.x},${p.z})`),
-        mode: 'markers+text',
-        textposition: 'top center',
-        marker: { size: 10, color: 'magenta' },
-        type: 'scatter',
-        name: 'Portals'
+        mode: 'markers+text', textposition: 'top center',
+        marker: { size: 10, color: 'magenta' }, type: 'scatter', name: 'Portals'
       });
     }
 
     areas.filter(a => a.enabled !== false).forEach(a => {
-      const xMin = Math.min(a.x1, a.x2),
-        xMax = Math.max(a.x1, a.x2);
-      const zMin = Math.min(a.z1, a.z2),
-        zMax = Math.max(a.z1, a.z2);
+      const xMin = Math.min(a.x1, a.x2), xMax = Math.max(a.x1, a.x2);
+      const zMin = Math.min(a.z1, a.z2), zMax = Math.max(a.z1, a.z2);
       data.push({
         x: [xMin, xMax, xMax, xMin, xMin],
         y: [zMin, zMin, zMax, zMax, zMin],
-        mode: 'lines',
-        line: { color: 'red', width: 2 },
-        showlegend: false,
-        type: 'scatter'
+        mode: 'lines', line: { color: 'red', width: 2 },
+        showlegend: false, type: 'scatter'
       });
     });
 
-    const areaLabelData = areas
-      .filter(a => a.enabled !== false)
-      .map(a => {
-        const xMin = Math.min(a.x1, a.x2),
-          xMax = Math.max(a.x1, a.x2);
-        const zMax = Math.max(a.z1, a.z2);
-        return {
-          x: [(xMin + xMax) / 2],
-          y: [zMax + 8],
-          text: [a.label],
-          mode: 'text',
-          textposition: 'top center',
-          textfont: { color: 'red', size: 14 },
-          showlegend: false,
-          type: 'scatter',
-        };
-      });
+    // Area labels
+    const areaLabelData = areas.filter(a => a.enabled !== false).map(a => {
+      const xMin = Math.min(a.x1, a.x2), xMax = Math.max(a.x1, a.x2);
+      const zMax = Math.max(a.z1, a.z2);
+      return {
+        x: [(xMin + xMax) / 2],
+        y: [zMax + 8],
+        text: [a.label],
+        mode: 'text',
+        textposition: 'top center',
+        textfont: { color: 'red', size: 14 },
+        showlegend: false,
+        type: 'scatter',
+      };
+    });
+
     data.push(...areaLabelData);
 
-    const xs = [
-      ...ps.map(p => p.x),
-      ...areas.map(a => a.x1),
-      ...areas.map(a => a.x2),
-    ];
-    const zs = [
-      ...ps.map(p => p.z),
-      ...areas.map(a => a.z1),
-      ...areas.map(a => a.z2),
-    ];
-    const minX = Math.min(...xs, 0) - 32;
-    const maxX = Math.max(...xs, 0) + 32;
-    const minZ = Math.min(...zs, 0) - 32;
-    const maxZ = Math.max(...zs, 0) + 32;
-    const xrange = maxX - minX;
-    const zrange = maxZ - minZ;
+    const xs = [...ps.map(p => p.x), ...areas.map(a => a.x1).concat(areas.map(a => a.x2))];
+    const zs = [...ps.map(p => p.z), ...areas.map(a => a.z1).concat(areas.map(a => a.z2))];
+    const minX = Math.min(...xs, 0) - 32, maxX = Math.max(...xs, 0) + 32;
+    const minZ = Math.min(...zs, 0) - 32, maxZ = Math.max(...zs, 0) + 32;
+    const xrange = maxX - minX, zrange = maxZ - minZ;
     const dt = calcDtick(Math.max(xrange, zrange));
 
-    Plotly.newPlot(
-      plotDiv,
-      data,
-      {
-        paper_bgcolor: '#111',
-        plot_bgcolor: '#111',
-        font: { color: '#ddd' },
-        xaxis: {
-          title: 'X',
-          showgrid: true,
-          gridcolor: '#333',
-          dtick: dt,
-          range: [minX, maxX],
-        },
-        yaxis: {
-          title: 'Z',
-          showgrid: true,
-          gridcolor: '#333',
-          dtick: dt,
-          scaleanchor: 'x',
-          scaleratio: 1,
-          range: [minZ, maxZ],
-        },
-        dragmode: false,
-        modebar: {
-          remove: [
-            'zoom2d',
-            'lasso2d',
-            'select2d',
-            'zoomIn2d',
-            'zoomOut2d',
-          ],
-          orientation: 'v',
-        },
-      },
-      { responsive: true }
-    );
-  }
-
-  function saveDataLocally(data) {
-    try {
-      localStorage.setItem('minecraftMapDataViewer', JSON.stringify(data));
-    } catch (e) {
-      console.warn('Could not save to localStorage:', e);
-    }
-  }
-
-  function loadDataLocally() {
-    try {
-      const saved = localStorage.getItem('minecraftMapDataViewer');
-      if (saved) {
-        return JSON.parse(saved);
+    Plotly.newPlot('plot', data, {
+      paper_bgcolor: '#111', plot_bgcolor: '#111', font: { color: '#ddd' },
+      xaxis: { title: 'X', showgrid: true, gridcolor: '#333', dtick: dt, range: [minX, maxX] },
+      yaxis: { title: 'Z', showgrid: true, gridcolor: '#333', dtick: dt, scaleanchor: 'x', scaleratio: 1, range: [minZ, maxZ] },
+      dragmode: false,
+      modebar: { remove: ['zoom2d', 'lasso2d', 'select2d', 'zoomIn2d', 'zoomOut2d'], orientation: 'v' }
+    }, { responsive: true }).then(() => {
+      const svgTexts = document.querySelectorAll('#plot svg g.scatterlayer g.points text');
+      const areaLabels = Array.from(svgTexts).filter(t => {
+        const style = window.getComputedStyle(t);
+        return style.fill === 'rgb(255, 0, 0)';
+      });
+      areaLabels.sort((a, b) => a.getBBox().x - b.getBBox().x);
+      const verticalOffsets = new Array(areaLabels.length).fill(0);
+      for (let i = 1; i < areaLabels.length; i++) {
+        const r1 = areaLabels[i - 1].getBBox();
+        const r2 = areaLabels[i].getBBox();
+        if (horizontalOverlap(r1, r2)) {
+          verticalOffsets[i] = verticalOffsets[i - 1] + r1.height + 4;
+        }
       }
-    } catch (e) {
-      console.warn('Could not load from localStorage:', e);
-    }
-    return null;
+      areaLabels.forEach((label, idx) => {
+        if (verticalOffsets[idx] > 0) {
+          const yOrig = parseFloat(label.getAttribute('y'));
+          label.setAttribute('y', yOrig - verticalOffsets[idx]);
+        }
+      });
+    });
   }
 
-  fileInput.addEventListener('change', (event) => {
-    const file = event.target.files[0];
+  // On file upload, parse JSON and update plot + save to localStorage
+  document.getElementById('fileUpload').addEventListener('change', e => {
+    const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = evt => {
       try {
-        const data = JSON.parse(e.target.result);
-        if (!data.portals) data.portals = [];
-        if (!data.areas) data.areas = [];
-        updatePlot(data.portals, data.areas);
-        saveDataLocally(data);
-      } catch (err) {
-        alert('Invalid JSON file.');
+        const json = JSON.parse(evt.target.result);
+        if (json.portals && json.areas) {
+          saveDataLocally(json);
+          updatePlot(json.portals, json.areas);
+        } else {
+          alert('Invalid data file format.');
+        }
+      } catch {
+        alert('Error parsing JSON file.');
       }
     };
     reader.readAsText(file);
   });
 
-  // On page load, try to load saved data from localStorage
+  // On page load: try fetch from remote, fallback to localStorage, fallback empty
   window.addEventListener('load', () => {
-    const savedData = loadDataLocally();
-    if (savedData && (savedData.portals || savedData.areas)) {
-      updatePlot(savedData.portals || [], savedData.areas || []);
-    } else {
-      updatePlot([], []);
-    }
+    fetch(DATA_URL).then(resp => {
+      if (!resp.ok) throw new Error('Failed to fetch remote data');
+      return resp.json();
+    }).then(data => {
+      if (data.portals && data.areas) {
+        saveDataLocally(data);
+        updatePlot(data.portals, data.areas);
+      } else {
+        throw new Error('Remote data missing portals or areas');
+      }
+    }).catch(() => {
+      // fallback to localStorage
+      const saved = loadDataLocally();
+      if (saved && saved.portals && saved.areas) {
+        updatePlot(saved.portals, saved.areas);
+      } else {
+        updatePlot([], []);
+      }
+    });
   });
 </script>
 
