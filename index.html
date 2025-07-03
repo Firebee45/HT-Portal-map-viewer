@@ -40,12 +40,10 @@
 <input type="file" id="fileUpload" accept="application/json" />
 
 <script>
-  // Change this URL to your actual public raw GitHub JSON file URL
-  const DATA_URL = 'https://raw.githubusercontent.com/yourusername/yourrepo/main/minecraftMapData.json';
+  const DATA_URL = 'https://github.com/Firebee45/HT-Portal-map-viewer/blob/main/minecraftMapData.json';
 
   let portals = [], areas = [];
 
-  // Save data locally (viewer page localStorage)
   function saveDataLocally(data) {
     try {
       localStorage.setItem('minecraftMapData', JSON.stringify(data));
